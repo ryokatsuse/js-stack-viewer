@@ -142,8 +142,9 @@ const SIGNATURES: Signature[] = [
     category: 'framework',
     scope: 'html',
     // astro-islandはhydrateするアイランドがないと出力されないため、
-    // ビルド済みAstroサイトに常に現れる /_astro/ とgeneratorメタも見る
-    test: /<astro-island|astro-static-slot|["'][^"']*\/_astro\/|content=["']Astro v[\d.]/,
+    // ビルド済みAstroサイトに常に現れる /_astro/ とgeneratorメタも見る。
+    // アセット出力先を変えていてもスクリプトのファイル名に _astro_type_ が残る
+    test: /<astro-island|astro-static-slot|["'][^"']*\/_astro\/|content=["']Astro v[\d.]|_astro_type_(?:script|style)/,
     version: (src) => {
       const m = src.match(/content=["']Astro v([\d.]+)["']/)
       return m ? exact(m[1]!) : undefined
@@ -620,11 +621,36 @@ export interface DetectInput {
   scripts: Array<{ url: string; content: string }>
   /** 取得した外部スタイルシートの中身 */
   styles?: Array<{ url: string; content: string }>
+  /** 解析対象ページのURL。検出元がサードパーティのドメインかどうかの表示に使う */
+  pageUrl?: string
+}
+
+/**
+ * 検出根拠に表示するソース名。同一ドメインのリソースはパスだけに縮め、
+ * 外部ドメインはホスト名を残してサードパーティ由来だとわかるようにする。
+ */
+function sourceLabel(label: string, pageHost: string | undefined): string {
+  if (label === 'HTML') return 'HTML'
+  try {
+    const u = new URL(label)
+    const path = u.pathname + u.search
+    const shown = u.host === pageHost ? path : u.host + path
+    return shown.slice(0, 80) || label
+  } catch {
+    // '(inline script)' などURLでないラベルはそのまま
+    return label
+  }
 }
 
 export function detect(input: DetectInput): Finding[] {
   const findings = new Map<string, Finding>()
   const superseded = new Set<string>()
+  let pageHost: string | undefined
+  try {
+    pageHost = input.pageUrl ? new URL(input.pageUrl).host : undefined
+  } catch {
+    pageHost = undefined
+  }
 
   for (const sig of SIGNATURES) {
     const sources: Array<{ label: string; text: string }> = []
@@ -646,10 +672,7 @@ export function detect(input: DetectInput): Finding[] {
       const m = src.text.match(sig.test)
       if (!m) continue
       const ver = sig.version?.(src.text)
-      const shortLabel =
-        src.label === 'HTML'
-          ? 'HTML'
-          : src.label.replace(/^https?:\/\/[^/]+/, '').slice(0, 80) || src.label
+      const shortLabel = sourceLabel(src.label, pageHost)
       const existing = findings.get(sig.id)
       // 既に見つかっていてもバージョンが取れた方を優先する
       // (推定値しかない場合は正確な値で上書きする)

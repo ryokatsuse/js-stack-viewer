@@ -1,5 +1,5 @@
 /**
- * 画面や診断結果に表示する文言の定義。
+ * 画面や結果に表示する文言の定義。
  * 表現を調整したいときはこのファイルだけ編集すればよい。
  */
 
@@ -115,4 +115,11 @@ export const UI_TEXT = {
   version: (v: string, isGuessed: boolean) => (isGuessed ? `v${v} (推定)` : `v${v}`),
   previewMeta: (url: string, moduleId: string | number, truncated: boolean) =>
     `${url} の module ${moduleId}${truncated ? ' (長いので先頭のみ表示)' : ''}`,
+  notes: {
+    title: '注意',
+    items: [
+      '結果は取得できた範囲からの推定です。外れることもあります',
+      '用法容量を守って正しくお使いください',
+    ],
+  },
 } as const

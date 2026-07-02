@@ -1,6 +1,6 @@
 # 技術スタックビューワー
 
-URLを入力して診断すると、配信されている本番バンドルを回収して
+URLを入力して調べると、配信されている本番バンドルを回収して
 [wakaru](https://github.com/pionxzh/wakaru) を使ってunminifyを行い、
 サイトで使われている技術スタック (バンドラ・フレームワーク・ライブラリなど) を
 知ることができるツールです。
@@ -12,7 +12,7 @@ pnpm install
 pnpm dev
 ```
 
-`http://localhost:4321` を開いてURLを入れて「診断する」を押すだけ。
+`http://localhost:4321` を開いてURLを入れて「調べる」を押すだけ。
 
 本番ビルド:
 
@@ -27,12 +27,12 @@ pnpm build   # Vercel向けの出力 (.vercel/output) を生成
 ```
 src/
   pages/
-    index.astro       # UI (入力・診断中表示・結果)
+    index.astro       # UI (入力・処理中表示・結果)
     api/analyze.ts    # POST /api/analyze
   lib/
     analyzer.ts       # 取得・wakaru実行のオーケストレーション
     detectors.ts      # シグネチャ辞書 (検出ロジック)
-    messages.ts       # 画面・診断結果に表示する文言の定義
+    messages.ts       # 画面・結果に表示する文言の定義
 ```
 
 
@@ -40,10 +40,10 @@ src/
 
 | 変数 | 説明 |
 | --- | --- |
-| `ALLOW_LOCAL=1` | localhost / プライベートIPへの診断を許可する (開発・テスト用。本番では設定しないこと) |
+| `ALLOW_LOCAL=1` | localhost / プライベートIPを調べるのを許可する (開発・テスト用。本番では設定しないこと) |
 | `PORT` | 本番サーバーのポート (デフォルト 4321) |
 
 ## 注意
 
-- 診断は取得できた範囲からの**推定**です。外れることもあります
+- 結果は取得できた範囲からの**推定**です。外れることもあります
 - 相手サーバーに負荷をかけない範囲で、行儀よく使ってください

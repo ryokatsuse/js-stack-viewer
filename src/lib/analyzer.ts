@@ -75,7 +75,7 @@ function assertSafeUrl(raw: string): URL {
     throw new AnalyzeError('URLの形式が正しくありません')
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new AnalyzeError('http / https のURLだけ診断できます')
+    throw new AnalyzeError('http / https のURLだけ調べられます')
   }
   if (process.env.ALLOW_LOCAL === '1') return url
   const host = url.hostname.toLowerCase()
@@ -93,7 +93,7 @@ function assertSafeUrl(raw: string): URL {
     /^\[?fe80/i,
   ]
   if (privatePatterns.some((p) => p.test(host))) {
-    throw new AnalyzeError('ローカル/プライベートなアドレスは診断できません')
+    throw new AnalyzeError('ローカル/プライベートなアドレスは調べられません')
   }
   return url
 }
@@ -270,12 +270,13 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
   fetchedJs.sort((a, b) => external.indexOf(a.url) - external.indexOf(b.url))
   for (const f of fetchedJs) scriptContents.push({ ...f, inline: false })
 
-  // スクリプトが1つもなくてもHTMLとヘッダだけで診断できるものはある
+  // スクリプトが1つもなくてもHTMLとヘッダだけで判定できるものはある
   const findings = detect({
     html,
     headers,
     scripts: scriptContents.map(({ url, content }) => ({ url, content })),
     styles: fetchedCss,
+    pageUrl: url.toString(),
   })
 
   // wakaruでunpackしてモジュール数を数え、一番モジュールが多いバンドルを主犯とみなす

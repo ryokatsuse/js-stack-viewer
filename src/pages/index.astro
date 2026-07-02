@@ -1,4 +1,6 @@
 ---
+import { UI_TEXT } from '../lib/messages'
+
 export const prerender = false
 ---
 
@@ -10,7 +12,7 @@ export const prerender = false
     <title>技術スタックビューワー</title>
     <meta
       name="description"
-      content="URLを入力して診断すると、wakaruを使ってunminifyを行い、サイトで使われている技術スタックを知ることができます"
+      content="URLを入力して調べると、wakaruを使ってunminifyを行い、サイトで使われている技術スタックを知ることができます"
     />
   </head>
   <body>
@@ -18,7 +20,7 @@ export const prerender = false
       <header>
         <h1>技術スタック<span class="accent">ビューワー</span></h1>
         <p class="subtitle">
-          URLを入力して診断すると
+          URLを入力して調べると
           <a href="https://github.com/pionxzh/wakaru" target="_blank" rel="noopener">wakaru</a>
           を使ってunminifyを行い、サイトで使われている技術スタックを知ることができます
         </p>
@@ -32,8 +34,15 @@ export const prerender = false
         </p>
       </header>
 
+      <aside class="notes">
+        <h2>{UI_TEXT.notes.title}</h2>
+        <ul>
+          {UI_TEXT.notes.items.map((item) => <li>{item}</li>)}
+        </ul>
+      </aside>
+
       <form id="form" autocomplete="off">
-        <label class="visually-hidden" for="url-input">診断するサイトのURL</label>
+        <label class="input-label" for="url-input">調べたいサイトのURL</label>
         <input
           id="url-input"
           type="url"
@@ -42,7 +51,7 @@ export const prerender = false
           required
           spellcheck="false"
         />
-        <button id="submit-btn" type="submit">診断する</button>
+        <button id="submit-btn" type="submit">調べる</button>
       </form>
 
       <section id="loading" role="status" aria-live="polite" hidden>
@@ -266,7 +275,7 @@ export const prerender = false
           })
           const data = await res.json()
           if (!res.ok) {
-            showError(data.error ?? `診断に失敗しました (HTTP ${res.status})`)
+            showError(data.error ?? `調べられませんでした (HTTP ${res.status})`)
             return
           }
           history.replaceState(null, '', `?u=${encodeURIComponent(url)}`)
@@ -288,7 +297,7 @@ export const prerender = false
         if (url) run(url)
       })
 
-      // シェアされたURL (?u=...) なら自動で診断開始
+      // シェアされたURL (?u=...) なら自動で調べ始める
       const params = new URLSearchParams(location.search)
       const shared = params.get('u') ?? params.get('url')
       if (shared) {
@@ -297,7 +306,7 @@ export const prerender = false
       }
     </script>
 
-    {/* 診断結果のDOMはクライアントJSで生成するため、scoped styleだと当たらない */}
+    {/* 結果のDOMはクライアントJSで生成するため、scoped styleだと当たらない */}
     <style is:global>
       :root {
         --bg: #0b0f14;
@@ -351,8 +360,14 @@ export const prerender = false
       }
       form {
         display: flex;
+        flex-wrap: wrap;
         gap: 10px;
         margin-bottom: 28px;
+      }
+      .input-label {
+        flex-basis: 100%;
+        font-size: 0.9rem;
+        font-weight: 700;
       }
       #url-input {
         flex: 1;
@@ -392,14 +407,6 @@ export const prerender = false
       :is(a, button, input, summary):focus-visible {
         outline: 2px solid #f4f7fa;
         outline-offset: 2px;
-      }
-      .visually-hidden {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip: rect(0 0 0 0);
-        white-space: nowrap;
       }
       @media (prefers-reduced-motion: reduce) {
         .spinner {
@@ -453,6 +460,21 @@ export const prerender = false
         font-weight: 700;
         color: var(--muted);
         letter-spacing: 0.08em;
+      }
+      .notes {
+        margin-bottom: 24px;
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+        font-size: 0.9rem;
+      }
+      .notes h2 {
+        margin: 0 0 6px;
+      }
+      .notes ul {
+        margin: 0;
+        padding-left: 1.4em;
       }
       .cards {
         display: grid;

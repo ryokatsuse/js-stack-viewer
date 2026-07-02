@@ -27,7 +27,7 @@ export const POST: APIRoute = async ({ request }) => {
       return json({ error: '取得がタイムアウトしました。相手が重いか、防御が固い' }, 504)
     }
     console.error('[analyze] unexpected error:', err)
-    return json({ error: '診断中に予期しないエラーが発生しました' }, 500)
+    return json({ error: '調べている途中で予期しないエラーが発生しました' }, 500)
   }
 }
 
