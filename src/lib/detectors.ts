@@ -130,7 +130,13 @@ const SIGNATURES: Signature[] = [
     name: 'Astro',
     category: 'framework',
     scope: 'html',
-    test: /<astro-island|astro-static-slot/,
+    // astro-islandはhydrateするアイランドがないと出力されないため、
+    // ビルド済みAstroサイトに常に現れる /_astro/ とgeneratorメタも見る
+    test: /<astro-island|astro-static-slot|["'][^"']*\/_astro\/|content=["']Astro v[\d.]/,
+    version: (src) => {
+      const m = src.match(/content=["']Astro v([\d.]+)["']/)
+      return m ? exact(m[1]!) : undefined
+    },
   },
   {
     id: 'angular',

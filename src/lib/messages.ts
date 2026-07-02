@@ -18,7 +18,7 @@ export const QUIPS: Record<string, string> = {
   gatsby: '___gatsby が見つかりました。Gatsby製です。',
   remix: '__remixContext が見つかりました。Remix系のフレームワークです。',
   sveltekit: '__sveltekit_ が見つかりました。SvelteKit製です。',
-  astro: 'astro-island が見つかりました。Astroのアイランドアーキテクチャです。',
+  astro: 'Astroの痕跡 (astro-island や /_astro/ のアセット) が見つかりました。Astro製です。',
   angular: 'ng-version属性が見つかりました。Angular製です。',
   wordpress: 'wp-content が見つかりました。WordPressで動いています。',
   shopify: 'Shopifyのテーマで動いています。',

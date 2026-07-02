@@ -201,7 +201,15 @@ async function tryUnminify(
 export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
   const url = assertSafeUrl(rawUrl)
 
-  const { text: html, headers } = await fetchText(url.toString(), MAX_HTML_BYTES)
+  let html: string
+  let headers: Record<string, string>
+  try {
+    ;({ text: html, headers } = await fetchText(url.toString(), MAX_HTML_BYTES))
+  } catch (err) {
+    if (err instanceof AnalyzeError) throw err
+    if (err instanceof Error && err.name === 'TimeoutError') throw err
+    throw new AnalyzeError('サイトに接続できませんでした。URLを確認してください', 502)
+  }
   const { external, inline } = extractScripts(html, url)
 
   const scriptContents: Array<{ url: string; content: string; inline: boolean }> =
@@ -231,13 +239,7 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
   fetched.sort((a, b) => external.indexOf(a.url) - external.indexOf(b.url))
   for (const f of fetched) scriptContents.push({ ...f, inline: false })
 
-  if (scriptContents.length === 0) {
-    throw new AnalyzeError(
-      'JavaScriptが見つかりませんでした。素のHTMLサイトか、取得がブロックされています',
-      422,
-    )
-  }
-
+  // スクリプトが1つもなくてもHTMLとヘッダだけで診断できるものはある
   const findings = detect({
     html,
     headers,
