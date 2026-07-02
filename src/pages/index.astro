@@ -7,24 +7,25 @@ export const prerender = false
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>このサイト、裏で何してんの？ビューア</title>
+    <title>すっぴんJS</title>
     <meta
       name="description"
-      content="URLを投げると本番バンドルをwakaruで解体して、使われている技術スタックの正体を暴くビューア"
+      content="URLを入力して診断すると、wakaruを使ってunminifyを行い、サイトで使われている技術スタックを知ることができます"
     />
   </head>
   <body>
     <main>
       <header>
-        <h1>このサイト、<span class="accent">裏で何してんの？</span></h1>
+        <h1>すっぴん<span class="accent">JS</span></h1>
         <p class="subtitle">
-          URLを投げると本番バンドルを回収して
+          URLを入力して診断すると
           <a href="https://github.com/pionxzh/wakaru" target="_blank" rel="noopener">wakaru</a>
-          で解体・unminifyし、正体を勝手に暴きます
+          を使ってunminifyを行い、サイトで使われている技術スタックを知ることができます
         </p>
       </header>
 
       <form id="form" autocomplete="off">
+        <label class="visually-hidden" for="url-input">診断するサイトのURL</label>
         <input
           id="url-input"
           type="url"
@@ -36,16 +37,16 @@ export const prerender = false
         <button id="submit-btn" type="submit">診断する</button>
       </form>
 
-      <section id="loading" hidden>
+      <section id="loading" role="status" aria-live="polite" hidden>
         <div class="spinner" aria-hidden="true"></div>
         <p id="loading-msg">HTMLを取得中…</p>
       </section>
 
-      <section id="error" hidden>
+      <section id="error" role="alert" hidden>
         <p id="error-msg"></p>
       </section>
 
-      <section id="result" hidden>
+      <section id="result" aria-live="polite" hidden>
         <p class="verdict-label">// 診断結果</p>
         <h2 id="verdict"></h2>
 
@@ -61,7 +62,11 @@ export const prerender = false
         <p id="js-total" class="muted"></p>
         <table id="scripts-table">
           <thead>
-            <tr><th>ファイル</th><th>サイズ</th><th>モジュール数</th></tr>
+            <tr>
+              <th scope="col">ファイル</th>
+              <th scope="col">サイズ</th>
+              <th scope="col">モジュール数</th>
+            </tr>
           </thead>
           <tbody></tbody>
         </table>
@@ -72,14 +77,6 @@ export const prerender = false
           <pre><code id="preview-code"></code></pre>
         </details>
       </section>
-
-      <footer>
-        <p>
-          powered by
-          <a href="https://github.com/pionxzh/wakaru" target="_blank" rel="noopener">wakaru</a>
-          — 診断は取得できた範囲の推定です。悪用はダメ、絶対。
-        </p>
-      </footer>
     </main>
 
     <script>
@@ -272,7 +269,7 @@ export const prerender = false
         // シェア (?url= はVite devサーバーが特別扱いするので ?u= を使う)
         const pageUrl = new URL(location.href)
         pageUrl.search = `?u=${encodeURIComponent(result.url)}`
-        const shareText = `🕵️ ${result.summary}\n#このサイト裏で何してんの`
+        const shareText = `🧼 ${result.summary}\n#すっぴんJS`
         const intent = new URL('https://twitter.com/intent/tweet')
         intent.searchParams.set('text', shareText)
         intent.searchParams.set('url', pageUrl.toString())
@@ -357,9 +354,7 @@ export const prerender = false
       }
       body {
         margin: 0;
-        background:
-          radial-gradient(1200px 500px at 50% -10%, #14202e 0%, transparent 60%),
-          var(--bg);
+        background: var(--bg);
         color: var(--text);
         font-family:
           'Hiragino Sans', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
@@ -414,17 +409,38 @@ export const prerender = false
         padding: 14px 22px;
         font-size: 1rem;
         font-weight: 700;
-        background: var(--accent);
-        color: #06220f;
-        border: none;
+        background: #f4f7fa;
+        color: #0b0f14;
+        border: 1px solid transparent;
         border-radius: 10px;
         cursor: pointer;
         text-decoration: none;
         display: inline-block;
       }
+      button:hover,
+      .btn:hover {
+        background: #dde5ec;
+      }
       button:disabled {
         opacity: 0.5;
         cursor: wait;
+      }
+      :is(a, button, input, summary):focus-visible {
+        outline: 2px solid #f4f7fa;
+        outline-offset: 2px;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .spinner {
+          animation-duration: 2.4s;
+        }
       }
       #loading {
         display: flex;
@@ -492,7 +508,8 @@ export const prerender = false
         border: 1px solid var(--border);
       }
       .share-row .btn:hover {
-        border-color: var(--accent);
+        background: var(--panel);
+        border-color: #f4f7fa;
       }
       h3 {
         margin: 28px 0 10px;

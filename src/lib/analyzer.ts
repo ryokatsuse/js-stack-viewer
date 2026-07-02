@@ -214,8 +214,8 @@ function buildSummary(url: URL, findings: Finding[]): string {
   }
   const infra = pick('infra')[0]
   if (infra) parts.push(`配信は${infra.name}`)
-  if (parts.length === 0) parts.push('正体不明の手練れ (痕跡ほぼなし)')
-  return `${url.hostname} の正体: ${parts.join(' / ')}`
+  if (parts.length === 0) parts.push('痕跡ほぼなしの手練れ')
+  return `${url.hostname} のすっぴん: ${parts.join(' / ')}`
 }
 
 export async function analyze(rawUrl: string): Promise<AnalyzeResult> {

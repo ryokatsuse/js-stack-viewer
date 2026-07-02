@@ -2,7 +2,7 @@
   "name": "suppin-js-viewer",
   "type": "module",
   "version": "0.1.0",
-  "description": "「このサイト、裏で何してんの？」ビューア — 本番バンドルをwakaruで解体して正体を暴くツール",
+  "description": "すっぴんJS — URLを診断するとwakaruでunminifyして、サイトで使われている技術スタックを知れるツール",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
