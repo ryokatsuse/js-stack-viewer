@@ -1,0 +1,593 @@
+---
+export const prerender = false
+---
+
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>このサイト、裏で何してんの？ビューア</title>
+    <meta
+      name="description"
+      content="URLを投げると本番バンドルをwakaruで解体して、使われている技術スタックの正体を暴くビューア"
+    />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>このサイト、<span class="accent">裏で何してんの？</span></h1>
+        <p class="subtitle">
+          URLを投げると本番バンドルを回収して
+          <a href="https://github.com/pionxzh/wakaru" target="_blank" rel="noopener">wakaru</a>
+          で解体・unminifyし、正体を勝手に暴きます
+        </p>
+      </header>
+
+      <form id="form" autocomplete="off">
+        <input
+          id="url-input"
+          type="url"
+          name="url"
+          placeholder="https://example.com"
+          required
+          spellcheck="false"
+        />
+        <button id="submit-btn" type="submit">診断する</button>
+      </form>
+
+      <section id="loading" hidden>
+        <div class="spinner" aria-hidden="true"></div>
+        <p id="loading-msg">HTMLを取得中…</p>
+      </section>
+
+      <section id="error" hidden>
+        <p id="error-msg"></p>
+      </section>
+
+      <section id="result" hidden>
+        <p class="verdict-label">// 診断結果</p>
+        <h2 id="verdict"></h2>
+
+        <div class="share-row">
+          <a id="share-x" class="btn" target="_blank" rel="noopener">Xでシェア</a>
+          <button id="share-copy" class="btn" type="button">結果URLをコピー</button>
+          <button id="share-native" class="btn" type="button" hidden>シェア</button>
+        </div>
+
+        <div id="findings"></div>
+
+        <h3>回収したJavaScript</h3>
+        <p id="js-total" class="muted"></p>
+        <table id="scripts-table">
+          <thead>
+            <tr><th>ファイル</th><th>サイズ</th><th>モジュール数</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <details id="preview-box" hidden>
+          <summary>解体したコードを覗く (wakaruでunminify済み)</summary>
+          <p id="preview-meta" class="muted"></p>
+          <pre><code id="preview-code"></code></pre>
+        </details>
+      </section>
+
+      <footer>
+        <p>
+          powered by
+          <a href="https://github.com/pionxzh/wakaru" target="_blank" rel="noopener">wakaru</a>
+          — 診断は取得できた範囲の推定です。悪用はダメ、絶対。
+        </p>
+      </footer>
+    </main>
+
+    <script>
+      interface Finding {
+        id: string
+        name: string
+        category: string
+        version?: string
+        versionGuessed?: boolean
+        quip: string
+        evidence: string
+      }
+      interface ScriptInfo {
+        url: string
+        bytes: number
+        inline: boolean
+        moduleCount: number | null
+      }
+      interface AnalyzeResult {
+        url: string
+        fetchedAt: string
+        scripts: ScriptInfo[]
+        totalJsBytes: number
+        findings: Finding[]
+        preview: {
+          scriptUrl: string
+          moduleId: string | number
+          code: string
+          truncated: boolean
+        } | null
+        summary: string
+      }
+
+      const $ = <T extends HTMLElement>(sel: string) =>
+        document.querySelector(sel) as T
+
+      const form = $<HTMLFormElement>('#form')
+      const input = $<HTMLInputElement>('#url-input')
+      const submitBtn = $<HTMLButtonElement>('#submit-btn')
+      const loading = $<HTMLElement>('#loading')
+      const loadingMsg = $<HTMLElement>('#loading-msg')
+      const errorBox = $<HTMLElement>('#error')
+      const errorMsg = $<HTMLElement>('#error-msg')
+      const resultBox = $<HTMLElement>('#result')
+
+      const LOADING_MESSAGES = [
+        'HTMLを取得中…',
+        'スクリプトタグを漁っています…',
+        '本番バンドルを回収中…',
+        'wakaruで解体しています…',
+        'モジュールをunminify中…',
+        '正体を暴いています…',
+      ]
+      let loadingTimer: ReturnType<typeof setInterval> | undefined
+
+      const CATEGORY_LABELS: Record<string, string> = {
+        bundler: 'バンドラ',
+        framework: 'フレームワーク',
+        ui: 'UIライブラリ',
+        library: 'ライブラリ',
+        analytics: '計測・監視',
+        infra: '配信インフラ',
+      }
+
+      function setLoading(on: boolean) {
+        loading.hidden = !on
+        submitBtn.disabled = on
+        if (on) {
+          let i = 0
+          loadingMsg.textContent = LOADING_MESSAGES[0]!
+          loadingTimer = setInterval(() => {
+            i = (i + 1) % LOADING_MESSAGES.length
+            loadingMsg.textContent = LOADING_MESSAGES[i]!
+          }, 2200)
+        } else if (loadingTimer) {
+          clearInterval(loadingTimer)
+          loadingTimer = undefined
+        }
+      }
+
+      function showError(message: string) {
+        errorMsg.textContent = message
+        errorBox.hidden = false
+      }
+
+      function formatBytes(n: number): string {
+        if (n >= 1024 * 1024) return `${(n / 1024 / 1024).toFixed(2)} MB`
+        if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`
+        return `${n} B`
+      }
+
+      function scriptName(s: ScriptInfo): string {
+        if (s.inline) return '(inline script)'
+        try {
+          const u = new URL(s.url)
+          const name = u.pathname.split('/').pop() || u.pathname
+          return name.length > 60 ? `${name.slice(0, 57)}…` : name
+        } catch {
+          return s.url
+        }
+      }
+
+      function render(result: AnalyzeResult) {
+        $('#verdict').textContent = result.summary
+
+        // findings をカテゴリごとにカード表示
+        const findingsRoot = $('#findings')
+        findingsRoot.replaceChildren()
+        if (result.findings.length === 0) {
+          const p = document.createElement('p')
+          p.className = 'muted'
+          p.textContent =
+            '既知のシグネチャには引っかかりませんでした。素朴なサイトか、相当の手練れです。'
+          findingsRoot.append(p)
+        }
+        const byCategory = new Map<string, Finding[]>()
+        for (const f of result.findings) {
+          const list = byCategory.get(f.category) ?? []
+          list.push(f)
+          byCategory.set(f.category, list)
+        }
+        for (const [cat, list] of byCategory) {
+          const h = document.createElement('h3')
+          h.textContent = CATEGORY_LABELS[cat] ?? cat
+          findingsRoot.append(h)
+          const grid = document.createElement('div')
+          grid.className = 'cards'
+          for (const f of list) {
+            const card = document.createElement('article')
+            card.className = 'card'
+            const title = document.createElement('div')
+            title.className = 'card-title'
+            title.textContent = f.name
+            if (f.version) {
+              const badge = document.createElement('span')
+              badge.className = 'badge'
+              badge.textContent = f.versionGuessed
+                ? `v${f.version} (推定)`
+                : `v${f.version}`
+              title.append(badge)
+            }
+            const quip = document.createElement('p')
+            quip.className = 'quip'
+            quip.textContent = f.quip
+            const ev = document.createElement('p')
+            ev.className = 'evidence'
+            ev.textContent = f.evidence
+            card.append(title, quip, ev)
+            grid.append(card)
+          }
+          findingsRoot.append(grid)
+        }
+
+        // スクリプト一覧
+        $('#js-total').textContent =
+          `計 ${result.scripts.length} ファイル / ${formatBytes(result.totalJsBytes)} のJavaScriptを回収`
+        const tbody = $('#scripts-table').querySelector('tbody')!
+        tbody.replaceChildren()
+        for (const s of result.scripts) {
+          const tr = document.createElement('tr')
+          const name = document.createElement('td')
+          name.textContent = scriptName(s)
+          name.title = s.url
+          const size = document.createElement('td')
+          size.textContent = formatBytes(s.bytes)
+          const mods = document.createElement('td')
+          mods.textContent =
+            s.moduleCount === null
+              ? '—'
+              : s.moduleCount <= 1
+                ? '分割なし'
+                : `${s.moduleCount} modules`
+          tr.append(name, size, mods)
+          tbody.append(tr)
+        }
+
+        // unminifyプレビュー
+        const previewBox = $<HTMLDetailsElement>('#preview-box')
+        if (result.preview) {
+          previewBox.hidden = false
+          previewBox.open = false
+          $('#preview-meta').textContent =
+            `${result.preview.scriptUrl} の module ${result.preview.moduleId}` +
+            (result.preview.truncated ? ' (長いので先頭のみ)' : '')
+          $('#preview-code').textContent = result.preview.code
+        } else {
+          previewBox.hidden = true
+        }
+
+        // シェア (?url= はVite devサーバーが特別扱いするので ?u= を使う)
+        const pageUrl = new URL(location.href)
+        pageUrl.search = `?u=${encodeURIComponent(result.url)}`
+        const shareText = `🕵️ ${result.summary}\n#このサイト裏で何してんの`
+        const intent = new URL('https://twitter.com/intent/tweet')
+        intent.searchParams.set('text', shareText)
+        intent.searchParams.set('url', pageUrl.toString())
+        $<HTMLAnchorElement>('#share-x').href = intent.toString()
+
+        const copyBtn = $<HTMLButtonElement>('#share-copy')
+        copyBtn.onclick = async () => {
+          await navigator.clipboard.writeText(pageUrl.toString())
+          copyBtn.textContent = 'コピーした！'
+          setTimeout(() => (copyBtn.textContent = '結果URLをコピー'), 1500)
+        }
+
+        const nativeBtn = $<HTMLButtonElement>('#share-native')
+        if (navigator.share) {
+          nativeBtn.hidden = false
+          nativeBtn.onclick = () =>
+            navigator
+              .share({ text: shareText, url: pageUrl.toString() })
+              .catch(() => {})
+        }
+
+        resultBox.hidden = false
+      }
+
+      async function run(url: string) {
+        errorBox.hidden = true
+        resultBox.hidden = true
+        setLoading(true)
+        try {
+          const res = await fetch('/api/analyze', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ url }),
+          })
+          const data = await res.json()
+          if (!res.ok) {
+            showError(data.error ?? `診断に失敗しました (HTTP ${res.status})`)
+            return
+          }
+          history.replaceState(null, '', `?u=${encodeURIComponent(url)}`)
+          render(data as AnalyzeResult)
+        } catch {
+          showError('サーバーとの通信に失敗しました')
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault()
+        let url = input.value.trim()
+        if (url && !/^https?:\/\//i.test(url)) {
+          url = `https://${url}`
+          input.value = url
+        }
+        if (url) run(url)
+      })
+
+      // シェアされたURL (?u=...) なら自動で診断開始
+      const params = new URLSearchParams(location.search)
+      const shared = params.get('u') ?? params.get('url')
+      if (shared) {
+        input.value = shared
+        run(shared)
+      }
+    </script>
+
+    {/* 診断結果のDOMはクライアントJSで生成するため、scoped styleだと当たらない */}
+    <style is:global>
+      :root {
+        --bg: #0b0f14;
+        --panel: #121822;
+        --border: #223041;
+        --text: #d7e2ec;
+        --muted: #7d8fa1;
+        --accent: #4ade80;
+        --accent-dim: #14532d;
+        --danger: #f87171;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(1200px 500px at 50% -10%, #14202e 0%, transparent 60%),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          'Hiragino Sans', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
+        line-height: 1.7;
+      }
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 48px 20px 80px;
+      }
+      header {
+        text-align: center;
+        margin-bottom: 36px;
+      }
+      h1 {
+        font-size: clamp(1.6rem, 5vw, 2.4rem);
+        margin: 0 0 8px;
+        letter-spacing: 0.02em;
+      }
+      .accent {
+        color: var(--accent);
+      }
+      .subtitle {
+        color: var(--muted);
+        margin: 0;
+        font-size: 0.95rem;
+      }
+      a {
+        color: var(--accent);
+      }
+      form {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 28px;
+      }
+      #url-input {
+        flex: 1;
+        padding: 14px 16px;
+        font-size: 1rem;
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--text);
+        outline: none;
+      }
+      #url-input:focus {
+        border-color: var(--accent);
+      }
+      button,
+      .btn {
+        padding: 14px 22px;
+        font-size: 1rem;
+        font-weight: 700;
+        background: var(--accent);
+        color: #06220f;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      #loading {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 20px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+      #loading[hidden] {
+        display: none;
+      }
+      .spinner {
+        width: 22px;
+        height: 22px;
+        border: 3px solid var(--accent-dim);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        flex-shrink: 0;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      #loading-msg {
+        margin: 0;
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        color: var(--accent);
+      }
+      #error {
+        padding: 16px 20px;
+        border: 1px solid var(--danger);
+        border-radius: 12px;
+        color: var(--danger);
+        background: rgba(248, 113, 113, 0.08);
+      }
+      #error p {
+        margin: 0;
+      }
+      .verdict-label {
+        color: var(--muted);
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        margin: 24px 0 4px;
+      }
+      #verdict {
+        font-size: clamp(1.15rem, 3.5vw, 1.5rem);
+        margin: 0 0 16px;
+        color: var(--accent);
+        word-break: break-all;
+      }
+      .share-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 28px;
+      }
+      .share-row .btn {
+        padding: 10px 16px;
+        font-size: 0.9rem;
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      .share-row .btn:hover {
+        border-color: var(--accent);
+      }
+      h3 {
+        margin: 28px 0 10px;
+        font-size: 1rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 12px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 16px;
+      }
+      .card-title {
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .badge {
+        font-size: 0.72rem;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--accent-dim);
+        color: var(--accent);
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+      }
+      .quip {
+        margin: 8px 0 6px;
+        font-size: 0.9rem;
+      }
+      .evidence {
+        margin: 0;
+        font-size: 0.75rem;
+        color: var(--muted);
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        word-break: break-all;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+        word-break: break-all;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 400;
+      }
+      details {
+        margin-top: 28px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px 18px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 700;
+        color: var(--accent);
+      }
+      pre {
+        overflow-x: auto;
+        background: #0a0e13;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 14px;
+        font-size: 0.78rem;
+        line-height: 1.5;
+        max-height: 480px;
+      }
+      footer {
+        margin-top: 60px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+    </style>
+  </body>
+</html>
