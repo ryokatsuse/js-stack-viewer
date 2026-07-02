@@ -86,6 +86,14 @@ const SIGNATURES: Signature[] = [
     test: /parcelRequire/,
   },
   {
+    id: 'bun',
+    name: 'Bun (バンドラ)',
+    category: 'bundler',
+    scope: 'js',
+    // bun buildが出力に付けるプラグマ (target: bunのビルドで付与される)
+    test: /^\/\/\s*@bun(?:\s|@|$)/m,
+  },
+  {
     id: 'esbuild',
     name: 'esbuild',
     category: 'bundler',
@@ -166,11 +174,25 @@ const SIGNATURES: Signature[] = [
     scope: 'both',
     test: /cdn\.shopify\.com|Shopify\.theme/,
   },
-  // ---- UI library ----
+  {
+    id: 'alpine',
+    name: 'Alpine.js',
+    category: 'framework',
+    scope: 'both',
+    test: /\bx-data=|alpinejs|Alpine\.start/,
+  },
+  {
+    id: 'htmx',
+    name: 'htmx',
+    category: 'framework',
+    scope: 'both',
+    test: /htmx\.org|\bhx-(?:get|post|swap|trigger|target)=/,
+  },
+  // ---- framework (UIフレームワーク / ランタイム) ----
   {
     id: 'react',
     name: 'React',
-    category: 'ui',
+    category: 'framework',
     scope: 'js',
     test: /["']react\.element["']|["']react\.transitional\.element["']|__REACT_DEVTOOLS_GLOBAL_HOOK__/,
     version: (src) => {
@@ -191,35 +213,35 @@ const SIGNATURES: Signature[] = [
   {
     id: 'react19',
     name: 'React 19系',
-    category: 'ui',
+    category: 'framework',
     scope: 'js',
     test: /["']react\.transitional\.element["']/,
   },
   {
     id: 'vue',
     name: 'Vue',
-    category: 'ui',
+    category: 'framework',
     scope: 'js',
     test: /__v_isRef|__v_skip|_isVue\b/,
   },
   {
     id: 'preact',
     name: 'Preact',
-    category: 'ui',
+    category: 'framework',
     scope: 'js',
     test: /__PREACT_DEVTOOLS__|preact\/compat/,
   },
   {
     id: 'svelte',
     name: 'Svelte',
-    category: 'ui',
+    category: 'framework',
     scope: 'both',
     test: /\.svelte-[a-z0-9]+/,
   },
   {
     id: 'jquery',
     name: 'jQuery',
-    category: 'ui',
+    category: 'framework',
     scope: 'js',
     test: /jQuery v\d|fn\.jquery\s*=|jquery\.org\/license/i,
     version: (src) => {
@@ -229,6 +251,77 @@ const SIGNATURES: Signature[] = [
       if (m) return exact(m[1]!)
       return undefined
     },
+  },
+  // ---- UI library (コンポーネント / スタイル) ----
+  {
+    id: 'mui',
+    name: 'MUI (Material UI)',
+    category: 'ui',
+    scope: 'both',
+    test: /Mui[A-Z][a-zA-Z]+-root|--mui-palette|\bMui-(?:focused|selected|disabled)\b/,
+  },
+  {
+    id: 'bootstrap',
+    name: 'Bootstrap',
+    category: 'ui',
+    scope: 'css',
+    test: /\bdata-bs-[a-z-]+=|Bootstrap\s+v\d/,
+    version: (src) => {
+      // ビルド後も残るライセンスバナー /*! Bootstrap v5.3.3 ... */
+      const m = src.match(/Bootstrap\s+v([\d.]+)/)
+      return m ? exact(m[1]!) : undefined
+    },
+  },
+  {
+    id: 'react-aria',
+    name: 'React Aria',
+    category: 'ui',
+    scope: 'both',
+    // useIdが生成する react-aria- プレフィックスのidと、
+    // react-aria-componentsが付与する data-rac 属性
+    test: /react-aria-[:\dR«]|\bdata-rac\b/,
+  },
+  {
+    id: 'radix',
+    name: 'Radix UI',
+    category: 'ui',
+    scope: 'both',
+    test: /data-radix-|\bradix-[:«]/,
+  },
+  {
+    id: 'chakra',
+    name: 'Chakra UI',
+    category: 'ui',
+    scope: 'both',
+    test: /--chakra-|\bchakra-(?:button|stack|text|heading|modal|input)\b/,
+  },
+  {
+    id: 'antd',
+    name: 'Ant Design',
+    category: 'ui',
+    scope: 'both',
+    test: /\bant-(?:btn|input|select|modal|form|layout|menu|table)\b|--ant-/,
+  },
+  {
+    id: 'mantine',
+    name: 'Mantine',
+    category: 'ui',
+    scope: 'both',
+    test: /--mantine-|data-mantine-/,
+  },
+  {
+    id: 'headlessui',
+    name: 'Headless UI',
+    category: 'ui',
+    scope: 'both',
+    test: /data-headlessui-|\bheadlessui-/,
+  },
+  {
+    id: 'fontawesome',
+    name: 'Font Awesome',
+    category: 'ui',
+    scope: 'both',
+    test: /font-?awesome/i,
   },
   // ---- library ----
   {
@@ -293,11 +386,73 @@ const SIGNATURES: Signature[] = [
     },
   },
   {
-    id: 'zonejs',
-    name: 'zone.js',
+    id: 'redux',
+    name: 'Redux',
     category: 'library',
     scope: 'js',
-    test: /__zone_symbol__|Zone\.__load_patch/,
+    // 内部アクションタイプ "@@redux/INIT..." はminify後も残る
+    test: /@@redux\//,
+  },
+  {
+    id: 'zod',
+    name: 'Zod',
+    category: 'library',
+    scope: 'js',
+    // ZodIssueCodeの文字列リテラルはminify後も残る
+    test: /unrecognized_keys|invalid_union_discriminator/,
+  },
+  {
+    id: 'threejs',
+    name: 'Three.js',
+    category: 'library',
+    scope: 'js',
+    // 警告メッセージの "THREE.〜" プレフィックスはminify後も残る
+    test: /THREE\.WebGLRenderer|THREE\.REVISION/,
+  },
+  {
+    id: 'chartjs',
+    name: 'Chart.js',
+    category: 'library',
+    scope: 'both',
+    test: /Chart\.js v[\d.]+|cdn\.jsdelivr\.net\/npm\/chart\.js/,
+    version: (src) => {
+      // ライセンスバナー /*! Chart.js v4.4.1 ... */
+      const m = src.match(/Chart\.js v([\d.]+)/)
+      return m ? exact(m[1]!) : undefined
+    },
+  },
+  {
+    id: 'd3',
+    name: 'D3.js',
+    category: 'library',
+    scope: 'both',
+    // 配布物の先頭バナー "// https://d3js.org v7.x.x"
+    test: /d3js\.org/,
+    version: (src) => {
+      const m = src.match(/d3js\.org v([\d.]+)/)
+      return m ? exact(m[1]!) : undefined
+    },
+  },
+  {
+    id: 'gsap',
+    name: 'GSAP',
+    category: 'library',
+    scope: 'both',
+    test: /\bgsap\b/i,
+  },
+  {
+    id: 'swiper',
+    name: 'Swiper',
+    category: 'library',
+    scope: 'both',
+    test: /swiper-(?:wrapper|slide|container)/,
+  },
+  {
+    id: 'stripe',
+    name: 'Stripe.js',
+    category: 'library',
+    scope: 'both',
+    test: /js\.stripe\.com/,
   },
   {
     id: 'graphql',
@@ -426,6 +581,17 @@ const HEADER_SIGNATURES: Array<{
     test: (h) =>
       'x-fastly-request-id' in h ||
       (/varnish/i.test(h['via'] ?? '') && 'x-served-by' in h),
+  },
+  {
+    id: 'bun',
+    name: 'Bun',
+    test: (h) => /\bbun\b/i.test(h['server'] ?? '') || 'x-bun-version' in h,
+  },
+  {
+    id: 'deno',
+    name: 'Deno',
+    // Deno Deployは server: deno/gcp-asia-northeast1 のようなヘッダを返す
+    test: (h) => /\bdeno\b/i.test(h['server'] ?? '') || 'x-deno-ray' in h,
   },
   {
     id: 'github-pages',
