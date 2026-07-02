@@ -17,9 +17,10 @@ pnpm dev
 本番ビルド:
 
 ```bash
-pnpm build
-pnpm start   # node ./dist/server/entry.mjs
+pnpm build   # Vercel向けの出力 (.vercel/output) を生成
 ```
+
+デプロイはVercelで行う (`@astrojs/vercel` アダプタを使用)。
 
 ## 構成
 
