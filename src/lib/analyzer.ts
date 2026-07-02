@@ -54,8 +54,6 @@ export interface AnalyzeResult {
     code: string
     truncated: boolean
   } | null
-  /** シェア用の一行サマリ */
-  summary: string
 }
 
 export class AnalyzeError extends Error {
@@ -200,24 +198,6 @@ async function tryUnminify(
   }
 }
 
-function buildSummary(url: URL, findings: Finding[]): string {
-  const pick = (cat: string) => findings.filter((f) => f.category === cat)
-  const parts: string[] = []
-  const bundler = pick('bundler')[0]
-  if (bundler) parts.push(`${bundler.name}製`)
-  for (const f of [...pick('framework'), ...pick('ui')].slice(0, 3)) {
-    parts.push(f.version ? `${f.name} ${f.version}` : f.name)
-  }
-  const analytics = pick('analytics')
-  if (analytics.length > 0) {
-    parts.push(`${analytics.map((f) => f.name.split(' ')[0]).slice(0, 2).join('+')}で計測中`)
-  }
-  const infra = pick('infra')[0]
-  if (infra) parts.push(`配信は${infra.name}`)
-  if (parts.length === 0) parts.push('痕跡ほぼなしの手練れ')
-  return `${url.hostname} のすっぴん: ${parts.join(' / ')}`
-}
-
 export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
   const url = assertSafeUrl(rawUrl)
 
@@ -310,6 +290,5 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
     totalJsBytes: scripts.reduce((acc, s) => acc + s.bytes, 0),
     findings,
     preview,
-    summary: buildSummary(url, findings),
   }
 }

@@ -47,18 +47,9 @@ export const prerender = false
       </section>
 
       <section id="result" aria-live="polite" hidden>
-        <p class="verdict-label">// 診断結果</p>
-        <h2 id="verdict"></h2>
-
-        <div class="share-row">
-          <a id="share-x" class="btn" target="_blank" rel="noopener">Xでシェア</a>
-          <button id="share-copy" class="btn" type="button">結果URLをコピー</button>
-          <button id="share-native" class="btn" type="button" hidden>シェア</button>
-        </div>
-
         <div id="findings"></div>
 
-        <h3>回収したJavaScript</h3>
+        <h2>取得したJavaScript</h2>
         <p id="js-total" class="muted"></p>
         <table id="scripts-table">
           <thead>
@@ -80,6 +71,8 @@ export const prerender = false
     </main>
 
     <script>
+      import { UI_TEXT } from '../lib/messages'
+
       interface Finding {
         id: string
         name: string
@@ -107,7 +100,6 @@ export const prerender = false
           code: string
           truncated: boolean
         } | null
-        summary: string
       }
 
       const $ = <T extends HTMLElement>(sel: string) =>
@@ -122,24 +114,10 @@ export const prerender = false
       const errorMsg = $<HTMLElement>('#error-msg')
       const resultBox = $<HTMLElement>('#result')
 
-      const LOADING_MESSAGES = [
-        'HTMLを取得中…',
-        'スクリプトタグを漁っています…',
-        '本番バンドルを回収中…',
-        'wakaruで解体しています…',
-        'モジュールをunminify中…',
-        '正体を暴いています…',
-      ]
+      const LOADING_MESSAGES = UI_TEXT.loadingMessages
       let loadingTimer: ReturnType<typeof setInterval> | undefined
 
-      const CATEGORY_LABELS: Record<string, string> = {
-        bundler: 'バンドラ',
-        framework: 'フレームワーク',
-        ui: 'UIライブラリ',
-        library: 'ライブラリ',
-        analytics: '計測・監視',
-        infra: '配信インフラ',
-      }
+      const CATEGORY_LABELS = UI_TEXT.categoryLabels
 
       function setLoading(on: boolean) {
         loading.hidden = !on
@@ -180,16 +158,13 @@ export const prerender = false
       }
 
       function render(result: AnalyzeResult) {
-        $('#verdict').textContent = result.summary
-
         // findings をカテゴリごとにカード表示
         const findingsRoot = $('#findings')
         findingsRoot.replaceChildren()
         if (result.findings.length === 0) {
           const p = document.createElement('p')
           p.className = 'muted'
-          p.textContent =
-            '既知のシグネチャには引っかかりませんでした。素朴なサイトか、相当の手練れです。'
+          p.textContent = UI_TEXT.noFindings
           findingsRoot.append(p)
         }
         const byCategory = new Map<string, Finding[]>()
@@ -199,7 +174,7 @@ export const prerender = false
           byCategory.set(f.category, list)
         }
         for (const [cat, list] of byCategory) {
-          const h = document.createElement('h3')
+          const h = document.createElement('h2')
           h.textContent = CATEGORY_LABELS[cat] ?? cat
           findingsRoot.append(h)
           const grid = document.createElement('div')
@@ -213,9 +188,7 @@ export const prerender = false
             if (f.version) {
               const badge = document.createElement('span')
               badge.className = 'badge'
-              badge.textContent = f.versionGuessed
-                ? `v${f.version} (推定)`
-                : `v${f.version}`
+              badge.textContent = UI_TEXT.version(f.version, !!f.versionGuessed)
               title.append(badge)
             }
             const quip = document.createElement('p')
@@ -231,8 +204,10 @@ export const prerender = false
         }
 
         // スクリプト一覧
-        $('#js-total').textContent =
-          `計 ${result.scripts.length} ファイル / ${formatBytes(result.totalJsBytes)} のJavaScriptを回収`
+        $('#js-total').textContent = UI_TEXT.jsTotal(
+          result.scripts.length,
+          formatBytes(result.totalJsBytes),
+        )
         const tbody = $('#scripts-table').querySelector('tbody')!
         tbody.replaceChildren()
         for (const s of result.scripts) {
@@ -247,8 +222,8 @@ export const prerender = false
             s.moduleCount === null
               ? '—'
               : s.moduleCount <= 1
-                ? '分割なし'
-                : `${s.moduleCount} modules`
+                ? UI_TEXT.moduleNone
+                : UI_TEXT.moduleCount(s.moduleCount)
           tr.append(name, size, mods)
           tbody.append(tr)
         }
@@ -258,37 +233,14 @@ export const prerender = false
         if (result.preview) {
           previewBox.hidden = false
           previewBox.open = false
-          $('#preview-meta').textContent =
-            `${result.preview.scriptUrl} の module ${result.preview.moduleId}` +
-            (result.preview.truncated ? ' (長いので先頭のみ)' : '')
+          $('#preview-meta').textContent = UI_TEXT.previewMeta(
+            result.preview.scriptUrl,
+            result.preview.moduleId,
+            result.preview.truncated,
+          )
           $('#preview-code').textContent = result.preview.code
         } else {
           previewBox.hidden = true
-        }
-
-        // シェア (?url= はVite devサーバーが特別扱いするので ?u= を使う)
-        const pageUrl = new URL(location.href)
-        pageUrl.search = `?u=${encodeURIComponent(result.url)}`
-        const shareText = `🧼 ${result.summary}\n#すっぴんJS`
-        const intent = new URL('https://twitter.com/intent/tweet')
-        intent.searchParams.set('text', shareText)
-        intent.searchParams.set('url', pageUrl.toString())
-        $<HTMLAnchorElement>('#share-x').href = intent.toString()
-
-        const copyBtn = $<HTMLButtonElement>('#share-copy')
-        copyBtn.onclick = async () => {
-          await navigator.clipboard.writeText(pageUrl.toString())
-          copyBtn.textContent = 'コピーした！'
-          setTimeout(() => (copyBtn.textContent = '結果URLをコピー'), 1500)
-        }
-
-        const nativeBtn = $<HTMLButtonElement>('#share-native')
-        if (navigator.share) {
-          nativeBtn.hidden = false
-          nativeBtn.onclick = () =>
-            navigator
-              .share({ text: shareText, url: pageUrl.toString() })
-              .catch(() => {})
         }
 
         resultBox.hidden = false
@@ -312,7 +264,7 @@ export const prerender = false
           history.replaceState(null, '', `?u=${encodeURIComponent(url)}`)
           render(data as AnalyzeResult)
         } catch {
-          showError('サーバーとの通信に失敗しました')
+          showError(UI_TEXT.communicationError)
         } finally {
           setLoading(false)
         }
@@ -483,37 +435,10 @@ export const prerender = false
       #error p {
         margin: 0;
       }
-      .verdict-label {
-        color: var(--muted);
-        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-        margin: 24px 0 4px;
-      }
-      #verdict {
-        font-size: clamp(1.15rem, 3.5vw, 1.5rem);
-        margin: 0 0 16px;
-        color: var(--accent);
-        word-break: break-all;
-      }
-      .share-row {
-        display: flex;
-        gap: 10px;
-        flex-wrap: wrap;
-        margin-bottom: 28px;
-      }
-      .share-row .btn {
-        padding: 10px 16px;
-        font-size: 0.9rem;
-        background: var(--panel);
-        color: var(--text);
-        border: 1px solid var(--border);
-      }
-      .share-row .btn:hover {
-        background: var(--panel);
-        border-color: #f4f7fa;
-      }
-      h3 {
+      h2 {
         margin: 28px 0 10px;
         font-size: 1rem;
+        font-weight: 700;
         color: var(--muted);
         text-transform: uppercase;
         letter-spacing: 0.08em;

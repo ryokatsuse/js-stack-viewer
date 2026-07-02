@@ -3,7 +3,7 @@
 URLを入力して診断すると、配信されている本番バンドルを回収して
 [wakaru](https://github.com/pionxzh/wakaru) を使ってunminifyを行い、
 サイトで使われている技術スタック (バンドラ・フレームワーク・ライブラリなど) を
-知ることができるツールです。診断結果はそのままX (Twitter) にシェアできます。
+知ることができるツールです。
 
 ## 使い方
 
@@ -39,15 +39,16 @@ npm run start   # node ./dist/server/entry.mjs
 ```
 src/
   pages/
-    index.astro       # UI (入力・診断中表示・結果・SNSシェア)
+    index.astro       # UI (入力・診断中表示・結果)
     api/analyze.ts    # POST /api/analyze
   lib/
     analyzer.ts       # 取得・wakaru実行のオーケストレーション
     detectors.ts      # シグネチャ辞書 (検出ロジック)
+    messages.ts       # 画面・診断結果に表示する文言の定義
 ```
 
 - フロントエンドは [Astro](https://astro.build) + `@astrojs/node` (standalone SSR)
-- シェアリンクは `/?u=<診断したURL>` 形式で、開くと自動で再診断が走ります
+- `/?u=<診断したいURL>` 形式で開くと自動で診断が走ります
 
 ## 環境変数
 
