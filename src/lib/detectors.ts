@@ -207,6 +207,14 @@ const SIGNATURES: Signature[] = [
       if (m) return exact(m[1]!)
       m = src.match(/reconcilerVersion[^"']*["'](\d+\.\d+\.\d+[^"']*)["']/)
       if (m) return guessed(m[1]!)
+      // 正確なバージョンが取れないときは、各世代で追加されたAPIの痕跡
+      // (minify後も残るexportsのプロパティ名やSymbol名) から世代を推定する
+      if (/["']react\.transitional\.element["']/.test(src)) return guessed('19.x')
+      if (/\.useInsertionEffect\s*=|["']useInsertionEffect["']/.test(src))
+        return guessed('18.x')
+      if (/\.useState\s*=|["']useState["']/.test(src))
+        return guessed('16.8〜17.x')
+      if (/["']react\.element["']/.test(src)) return guessed('16〜17.x')
       return undefined
     },
   },
@@ -644,7 +652,11 @@ export function detect(input: DetectInput): Finding[] {
           : src.label.replace(/^https?:\/\/[^/]+/, '').slice(0, 80) || src.label
       const existing = findings.get(sig.id)
       // 既に見つかっていてもバージョンが取れた方を優先する
-      if (!existing || (ver && !existing.version)) {
+      // (推定値しかない場合は正確な値で上書きする)
+      if (
+        !existing ||
+        (ver && (!existing.version || (existing.versionGuessed && !ver.guessed)))
+      ) {
         findings.set(sig.id, {
           id: sig.id,
           name: sig.name,
@@ -656,7 +668,10 @@ export function detect(input: DetectInput): Finding[] {
         })
         for (const weak of sig.supersedes ?? []) superseded.add(weak)
       }
-      if (findings.get(sig.id)?.version) break
+      // 正確なバージョンが取れたら残りのソースは見なくてよい
+      // (推定値のうちはより正確な値を求めて探索を続ける)
+      const found = findings.get(sig.id)
+      if (found?.version && !found.versionGuessed) break
     }
   }
 
