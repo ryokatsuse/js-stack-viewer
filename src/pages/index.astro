@@ -22,6 +22,14 @@ export const prerender = false
           <a href="https://github.com/pionxzh/wakaru" target="_blank" rel="noopener">wakaru</a>
           を使ってunminifyを行い、サイトで使われている技術スタックを知ることができます
         </p>
+        <p class="subtitle subtitle-note">
+          検出できない技術スタックもあります。検出できる技術スタックの一覧は
+          <a
+            href="https://github.com/ryokatsuse/js-stack-viewer/blob/main/src/lib/detectors.ts"
+            target="_blank"
+            rel="noopener">設定ファイル</a
+          >をご確認ください
+        </p>
       </header>
 
       <form id="form" autocomplete="off">
@@ -334,6 +342,12 @@ export const prerender = false
         margin: 0;
         font-size: 0.95rem;
       }
+      .subtitle + .subtitle {
+        margin-top: 8px;
+      }
+      .subtitle-note {
+        text-align: left;
+      }
       a {
         color: var(--accent);
       }
@@ -440,7 +454,6 @@ export const prerender = false
         font-size: 1rem;
         font-weight: 700;
         color: var(--muted);
-        text-transform: uppercase;
         letter-spacing: 0.08em;
       }
       .cards {
