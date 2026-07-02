@@ -24,12 +24,15 @@ npm run start   # node ./dist/server/entry.mjs
 ## 何をしているのか
 
 1. 入力されたURLのHTMLを取得して `<script>` タグ (と `modulepreload`) を漁る
-2. 外部スクリプトを回収 (最大10ファイル / 各8MBまで)
-3. HTML・JS・レスポンスヘッダを**シグネチャ辞書**と突き合わせて、
+2. 外部スクリプト (最大10ファイル / 各8MBまで) とスタイルシート
+   (最大5ファイル / 各2MBまで) を取得
+3. HTML・JS・CSS・レスポンスヘッダを**シグネチャ辞書**と突き合わせて、
    バンドラ / フレームワーク / UIライブラリ / 計測SDK / 配信インフラを特定
    - minify後も生き残る文字列 (`webpackChunk`, `Symbol.for("react.element")`,
      `__lodash_hash_undefined__` など) を狙い撃ち
    - react-domがDevTools hookに登録するバージョン文字列からReactのバージョンも抜く
+   - TailwindのようにCSSにしか痕跡が残らないものはビルド後のCSS
+     (ライセンスバナーや `--tw-` カスタムプロパティ) から検出する
 4. 各バンドルを `@wakaru/unpacker` でモジュール単位に解体してモジュール数を計測
 5. 一番モジュールが多かったバンドルの代表モジュールを `@wakaru/unminify` で
    読めるコードに復元してプレビュー表示

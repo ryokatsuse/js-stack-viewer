@@ -31,8 +31,11 @@ interface Signature {
   id: string
   name: string
   category: Category
-  /** 'js' = バンドル本体, 'html' = ドキュメント, 'both' = 両方 */
-  scope: 'js' | 'html' | 'both'
+  /**
+   * 'js' = バンドル本体, 'html' = ドキュメント, 'both' = html+js,
+   * 'css' = スタイルシート (インライン<style>を含むHTMLも見る)
+   */
+  scope: 'js' | 'html' | 'both' | 'css'
   test: RegExp
   /** マッチしたソースからバージョンを引き抜く */
   version?: (source: string) => { value: string; guessed: boolean } | undefined
@@ -281,8 +284,13 @@ const SIGNATURES: Signature[] = [
     id: 'tailwind',
     name: 'Tailwind CSS',
     category: 'library',
-    scope: 'both',
-    test: /--tw-[a-z-]+/,
+    scope: 'css',
+    test: /--tw-[a-z-]+|tailwindcss v\d/,
+    version: (src) => {
+      // ビルド後も残るライセンスバナー /*! tailwindcss v4.1.5 | MIT License */
+      const m = src.match(/tailwindcss v([\d.]+)/)
+      return m ? exact(m[1]!) : undefined
+    },
   },
   {
     id: 'zonejs',
@@ -436,6 +444,8 @@ export interface DetectInput {
   headers: Record<string, string>
   /** 取得した各スクリプトの中身 (インライン含む) */
   scripts: Array<{ url: string; content: string }>
+  /** 取得した外部スタイルシートの中身 */
+  styles?: Array<{ url: string; content: string }>
 }
 
 export function detect(input: DetectInput): Finding[] {
@@ -444,11 +454,16 @@ export function detect(input: DetectInput): Finding[] {
 
   for (const sig of SIGNATURES) {
     const sources: Array<{ label: string; text: string }> = []
-    if (sig.scope === 'html' || sig.scope === 'both') {
+    if (sig.scope === 'html' || sig.scope === 'both' || sig.scope === 'css') {
       sources.push({ label: 'HTML', text: input.html })
     }
     if (sig.scope === 'js' || sig.scope === 'both') {
       for (const s of input.scripts) {
+        sources.push({ label: s.url, text: s.content })
+      }
+    }
+    if (sig.scope === 'css') {
+      for (const s of input.styles ?? []) {
         sources.push({ label: s.url, text: s.content })
       }
     }

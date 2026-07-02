@@ -24,6 +24,8 @@ const FETCH_TIMEOUT_MS = 20_000
 const MAX_HTML_BYTES = 3 * 1024 * 1024
 const MAX_SCRIPT_BYTES = 8 * 1024 * 1024
 const MAX_SCRIPTS = 10
+const MAX_STYLESHEETS = 5
+const MAX_CSS_BYTES = 2 * 1024 * 1024
 /** これ以上デカいバンドルはunpackしない (CPU保護) */
 const MAX_UNPACK_BYTES = 3 * 1024 * 1024
 /** unminifyに食わせるモジュールコードの上限 */
@@ -173,6 +175,26 @@ function extractScripts(html: string, baseUrl: URL): ExtractedScripts {
   return { external: external.slice(0, MAX_SCRIPTS), inline }
 }
 
+/** TailwindなどCSSにしか痕跡が残らないものを検出するためスタイルシートも取得する */
+function extractStylesheets(html: string, baseUrl: URL): string[] {
+  const urls: string[] = []
+  const linkTag = /<link\b[^>]*>/gi
+  let m: RegExpExecArray | null
+  while ((m = linkTag.exec(html)) !== null) {
+    const tag = m[0]
+    if (!/\brel\s*=\s*["']?stylesheet["']?/i.test(tag)) continue
+    const href = tag.match(/\bhref\s*=\s*["']([^"']+)["']/i)?.[1]
+    if (!href) continue
+    try {
+      const resolved = new URL(href, baseUrl).toString()
+      if (!urls.includes(resolved)) urls.push(resolved)
+    } catch {
+      /* 不正なhrefは無視 */
+    }
+  }
+  return urls.slice(0, MAX_STYLESHEETS)
+}
+
 function tryUnpack(source: string) {
   if (source.length > MAX_UNPACK_BYTES) return null
   try {
@@ -217,33 +239,43 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
       ? [{ url: '(inline script)', content: inline.join('\n;\n'), inline: true }]
       : []
 
-  // 直列だと遅いので4並列で取得
+  // 直列だと遅いので4並列で取得 (スクリプトとCSSをまとめて)
+  const stylesheetUrls = extractStylesheets(html, url)
   const CONCURRENCY = 4
-  const queue = [...external]
-  const fetched: Array<{ url: string; content: string }> = []
+  const queue: Array<{ url: string; kind: 'js' | 'css' }> = [
+    ...external.map((u) => ({ url: u, kind: 'js' as const })),
+    ...stylesheetUrls.map((u) => ({ url: u, kind: 'css' as const })),
+  ]
+  const fetchedJs: Array<{ url: string; content: string }> = []
+  const fetchedCss: Array<{ url: string; content: string }> = []
   await Promise.all(
     Array.from({ length: CONCURRENCY }, async () => {
       for (;;) {
         const next = queue.shift()
         if (!next) return
         try {
-          const { text } = await fetchText(next, MAX_SCRIPT_BYTES)
-          fetched.push({ url: next, content: text })
+          const max = next.kind === 'js' ? MAX_SCRIPT_BYTES : MAX_CSS_BYTES
+          const { text } = await fetchText(next.url, max)
+          ;(next.kind === 'js' ? fetchedJs : fetchedCss).push({
+            url: next.url,
+            content: text,
+          })
         } catch {
-          /* 取れないスクリプトはスキップ */
+          /* 取れないリソースはスキップ */
         }
       }
     }),
   )
   // 取得順ではなくHTML内の出現順に戻す
-  fetched.sort((a, b) => external.indexOf(a.url) - external.indexOf(b.url))
-  for (const f of fetched) scriptContents.push({ ...f, inline: false })
+  fetchedJs.sort((a, b) => external.indexOf(a.url) - external.indexOf(b.url))
+  for (const f of fetchedJs) scriptContents.push({ ...f, inline: false })
 
   // スクリプトが1つもなくてもHTMLとヘッダだけで診断できるものはある
   const findings = detect({
     html,
     headers,
     scripts: scriptContents.map(({ url, content }) => ({ url, content })),
+    styles: fetchedCss,
   })
 
   // wakaruでunpackしてモジュール数を数え、一番モジュールが多いバンドルを主犯とみなす
