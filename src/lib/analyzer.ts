@@ -33,7 +33,7 @@ const MAX_UNMINIFY_CHARS = 20_000
 const MAX_PREVIEW_CHARS = 12_000
 
 const UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 SuppinJsViewer/0.1'
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 TechStackViewer/0.1'
 
 export interface ScriptInfo {
   url: string

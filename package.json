@@ -1,8 +1,9 @@
 {
-  "name": "suppin-js-viewer",
+  "name": "tech-stack-viewer",
   "type": "module",
   "version": "0.1.0",
-  "description": "すっぴんJS — URLを診断するとwakaruでunminifyして、サイトで使われている技術スタックを知れるツール",
+  "packageManager": "pnpm@10.11.1",
+  "description": "技術スタックビューワー — URLを診断するとwakaruでunminifyして、サイトで使われている技術スタックを知れるツール",
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
@@ -19,5 +20,11 @@
     "@astrojs/check": "^0.9.9",
     "@types/node": "^26.1.0",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
   }
 }
