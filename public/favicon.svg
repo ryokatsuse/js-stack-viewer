@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- 背景: サイトのダークテーマと同じ配色 -->
+  <rect x="1" y="1" width="62" height="62" rx="14" fill="#0b0f14" stroke="#223041" stroke-width="2"/>
+  <!-- コードを表す </> をアクセントグリーンで -->
+  <g stroke="#4ade80" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polyline points="22,21 11,32 22,43"/>
+    <polyline points="42,21 53,32 42,43"/>
+    <line x1="36" y1="16" x2="28" y2="48"/>
+  </g>
+</svg>
