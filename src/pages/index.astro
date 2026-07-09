@@ -133,24 +133,19 @@ export const prerender = false
       const resultBox = $<HTMLElement>('#result')
 
       const LOADING_MESSAGES = UI_TEXT.loadingMessages
-      let loadingTimer: ReturnType<typeof setInterval> | undefined
 
       const CATEGORY_LABELS = UI_TEXT.categoryLabels
 
       function setLoading(on: boolean) {
         loading.hidden = !on
         submitBtn.disabled = on
-        if (on) {
-          let i = 0
-          loadingMsg.textContent = LOADING_MESSAGES[0]!
-          loadingTimer = setInterval(() => {
-            i = (i + 1) % LOADING_MESSAGES.length
-            loadingMsg.textContent = LOADING_MESSAGES[i]!
-          }, 2200)
-        } else if (loadingTimer) {
-          clearInterval(loadingTimer)
-          loadingTimer = undefined
-        }
+        if (on) setStage('fetchHtml')
+      }
+
+      // サーバーが送ってくる進捗ステージをそのまま表示する
+      function setStage(stage: string) {
+        const msg = LOADING_MESSAGES[stage]
+        if (msg) loadingMsg.textContent = msg
       }
 
       function showError(message: string) {
@@ -264,6 +259,43 @@ export const prerender = false
         resultBox.hidden = false
       }
 
+      interface StreamMessage {
+        stage?: string
+        result?: AnalyzeResult
+        error?: string
+      }
+
+      // NDJSONのレスポンスを1行ずつ読み、進捗を反映しつつ最終行を返す
+      async function readStream(res: Response): Promise<StreamMessage | null> {
+        if (!res.body) {
+          const text = await res.text()
+          const lines = text.split('\n').filter((l) => l.trim())
+          return lines.length ? JSON.parse(lines[lines.length - 1]!) : null
+        }
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+        let last: StreamMessage | null = null
+        const handleLine = (line: string) => {
+          if (!line.trim()) return
+          const msg = JSON.parse(line) as StreamMessage
+          if (msg.stage) setStage(msg.stage)
+          else last = msg
+        }
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          let idx: number
+          while ((idx = buf.indexOf('\n')) >= 0) {
+            handleLine(buf.slice(0, idx))
+            buf = buf.slice(idx + 1)
+          }
+        }
+        handleLine(buf)
+        return last
+      }
+
       async function run(url: string) {
         errorBox.hidden = true
         resultBox.hidden = true
@@ -274,13 +306,18 @@ export const prerender = false
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ url }),
           })
-          const data = await res.json()
           if (!res.ok) {
-            showError(data.error ?? `調べられませんでした (HTTP ${res.status})`)
+            const data = await res.json().catch(() => null)
+            showError(data?.error ?? `調べられませんでした (HTTP ${res.status})`)
+            return
+          }
+          const final = await readStream(res)
+          if (!final?.result) {
+            showError(final?.error ?? UI_TEXT.communicationError)
             return
           }
           history.replaceState(null, '', `?u=${encodeURIComponent(url)}`)
-          render(data as AnalyzeResult)
+          render(final.result)
         } catch {
           showError(UI_TEXT.communicationError)
         } finally {

@@ -21,6 +21,8 @@ const { runDefaultTransformationRules } = require('@wakaru/unminify') as {
 }
 
 const FETCH_TIMEOUT_MS = 20_000
+/** JS/CSSなどサブリソースは短めに諦める (1本の遅いCDNで全体が待たされないように) */
+const SUBRESOURCE_TIMEOUT_MS = 10_000
 const MAX_HTML_BYTES = 3 * 1024 * 1024
 const MAX_SCRIPT_BYTES = 8 * 1024 * 1024
 const MAX_SCRIPTS = 10
@@ -28,6 +30,11 @@ const MAX_STYLESHEETS = 5
 const MAX_CSS_BYTES = 2 * 1024 * 1024
 /** これ以上デカいバンドルはunpackしない (CPU保護) */
 const MAX_UNPACK_BYTES = 3 * 1024 * 1024
+/** このサイズを超えるスクリプトは、バンドルの痕跡があるときだけunpackする */
+const UNPACK_ALWAYS_BYTES = 512 * 1024
+/** 主要バンドラのランタイムヘルパー。これが無い大きなスクリプトは分割できる見込みが薄い */
+const BUNDLE_MARKERS =
+  /webpackChunk|webpackJsonp|__webpack_require__|parcelRequire|__vitePreload|__vite__mapDeps|__toESM\s*=|__toCommonJS\s*=/
 /** unminifyに食わせるモジュールコードの上限 */
 const MAX_UNMINIFY_CHARS = 20_000
 const MAX_PREVIEW_CHARS = 12_000
@@ -101,11 +108,12 @@ function assertSafeUrl(raw: string): URL {
 async function fetchText(
   url: string,
   maxBytes: number,
+  timeoutMs = FETCH_TIMEOUT_MS,
 ): Promise<{ text: string; headers: Record<string, string> }> {
   const res = await fetch(url, {
     headers: { 'user-agent': UA, accept: '*/*' },
     redirect: 'follow',
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   if (!res.ok) {
     throw new AnalyzeError(`${url} の取得に失敗しました (HTTP ${res.status})`, 502)
@@ -197,6 +205,10 @@ function extractStylesheets(html: string, baseUrl: URL): string[] {
 
 function tryUnpack(source: string) {
   if (source.length > MAX_UNPACK_BYTES) return null
+  // 大きいのにバンドラの痕跡がないスクリプト (アナリティクスSDKなど) は
+  // パースしても分割できないので、CPUの浪費を避けてスキップする
+  if (source.length > UNPACK_ALWAYS_BYTES && !BUNDLE_MARKERS.test(source))
+    return null
   try {
     return unpack(source)
   } catch {
@@ -220,9 +232,28 @@ async function tryUnminify(
   }
 }
 
-export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
+/** 解析の進捗ステージ。UI表示の文言はmessages.tsのloadingMessagesで定義する */
+export type AnalyzeStage =
+  | 'fetchHtml'
+  | 'extractScripts'
+  | 'fetchResources'
+  | 'detect'
+  | 'unpack'
+  | 'unminify'
+
+/**
+ * 進捗イベントをレスポンスに書き出す時間を確保するため、
+ * CPUを長く占有する同期処理の前にイベントループへ制御を返す
+ */
+const yieldToEventLoop = () => new Promise<void>((r) => setImmediate(r))
+
+export async function analyze(
+  rawUrl: string,
+  onProgress?: (stage: AnalyzeStage) => void,
+): Promise<AnalyzeResult> {
   const url = assertSafeUrl(rawUrl)
 
+  onProgress?.('fetchHtml')
   let html: string
   let headers: Record<string, string>
   try {
@@ -232,6 +263,7 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
     if (err instanceof Error && err.name === 'TimeoutError') throw err
     throw new AnalyzeError('サイトに接続できませんでした。URLを確認してください', 502)
   }
+  onProgress?.('extractScripts')
   const { external, inline } = extractScripts(html, url)
 
   const scriptContents: Array<{ url: string; content: string; inline: boolean }> =
@@ -239,9 +271,10 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
       ? [{ url: '(inline script)', content: inline.join('\n;\n'), inline: true }]
       : []
 
-  // 直列だと遅いので4並列で取得 (スクリプトとCSSをまとめて)
+  // I/O待ちが大半なので並列で取得 (スクリプトとCSSをまとめて)
+  onProgress?.('fetchResources')
   const stylesheetUrls = extractStylesheets(html, url)
-  const CONCURRENCY = 4
+  const CONCURRENCY = 8
   const queue: Array<{ url: string; kind: 'js' | 'css' }> = [
     ...external.map((u) => ({ url: u, kind: 'js' as const })),
     ...stylesheetUrls.map((u) => ({ url: u, kind: 'css' as const })),
@@ -255,7 +288,7 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
         if (!next) return
         try {
           const max = next.kind === 'js' ? MAX_SCRIPT_BYTES : MAX_CSS_BYTES
-          const { text } = await fetchText(next.url, max)
+          const { text } = await fetchText(next.url, max, SUBRESOURCE_TIMEOUT_MS)
           ;(next.kind === 'js' ? fetchedJs : fetchedCss).push({
             url: next.url,
             content: text,
@@ -271,6 +304,8 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
   for (const f of fetchedJs) scriptContents.push({ ...f, inline: false })
 
   // スクリプトが1つもなくてもHTMLとヘッダだけで判定できるものはある
+  onProgress?.('detect')
+  await yieldToEventLoop()
   const findings = detect({
     html,
     headers,
@@ -280,12 +315,14 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
   })
 
   // wakaruでunpackしてモジュール数を数え、一番モジュールが多いバンドルを主犯とみなす
+  onProgress?.('unpack')
   const scripts: ScriptInfo[] = []
   let best: {
     scriptUrl: string
     modules: Array<{ id: string | number; isEntry: boolean; code: string }>
   } | null = null
   for (const s of scriptContents) {
+    await yieldToEventLoop()
     const unpacked = tryUnpack(s.content)
     const moduleCount = unpacked ? unpacked.modules.length : null
     scripts.push({
@@ -306,6 +343,8 @@ export async function analyze(rawUrl: string): Promise<AnalyzeResult> {
       best.modules.find((m) => m.isEntry && m.code.trim().length > 40) ??
       [...best.modules].sort((a, b) => b.code.length - a.code.length)[0]
     if (candidate && candidate.code.trim().length > 0) {
+      onProgress?.('unminify')
+      await yieldToEventLoop()
       const code = await tryUnminify(candidate.id, candidate.code)
       if (code) {
         preview = {

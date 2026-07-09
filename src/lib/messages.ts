@@ -90,14 +90,15 @@ export const HEADER_QUIPS: Record<string, string> = {
 
 /** 画面表示用の文言 */
 export const UI_TEXT = {
-  loadingMessages: [
-    'HTMLを取得中…',
-    'スクリプトタグを調べています…',
-    'バンドルを取得中…',
-    'wakaruで解析しています…',
-    'モジュールをunminify中…',
-    '技術スタックを判定しています…',
-  ],
+  /** 解析APIが送ってくる進捗ステージ (analyzer.tsのAnalyzeStage) ごとの表示文言 */
+  loadingMessages: {
+    fetchHtml: 'HTMLを取得中…',
+    extractScripts: 'スクリプトタグを調べています…',
+    fetchResources: 'バンドルを取得中…',
+    detect: '技術スタックを判定しています…',
+    unpack: 'wakaruで解析しています…',
+    unminify: 'モジュールをunminify中…',
+  } as Record<string, string>,
   categoryLabels: {
     bundler: 'バンドラ',
     framework: 'フレームワーク',
